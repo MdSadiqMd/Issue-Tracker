@@ -20,12 +20,13 @@ type RepoObject struct {
 }
 
 func LoadReposFromGistDB(gistID, accessToken string) ([]string, error) {
-	url := fmt.Sprintf("https://gist-db.mohammadsadiq4950.workers.dev/api/%s?collection_name=repos", gistID)
-	fmt.Printf("Fetching repos from GistDB: %s\n", url)
+	url := fmt.Sprintf("https://api.github.com/gists/%s", gistID)
+	fmt.Printf("Fetching repos from GitHub gist: %s\n", url)
 
 	headers := js.Global().Get("Object").New()
 	headers.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
-	headers.Set("Content-Type", "application/json")
+	headers.Set("Accept", "application/vnd.github.v3+json")
+	headers.Set("User-Agent", "Issue-Tracker-Worker")
 
 	options := js.Global().Get("Object").New()
 	options.Set("method", "GET")
@@ -41,7 +42,7 @@ func LoadReposFromGistDB(gistID, accessToken string) ([]string, error) {
 		response := args[0]
 		status := response.Get("status").Int()
 		if status != 200 {
-			errorChan <- fmt.Errorf("GistDB API returned status %d", status)
+			errorChan <- fmt.Errorf("GitHub API returned status %d", status)
 			return nil
 		}
 
@@ -72,29 +73,31 @@ func LoadReposFromGistDB(gistID, accessToken string) ([]string, error) {
 
 	select {
 	case data := <-resultChan:
-		fmt.Printf("Received GistDB response: %s\n", string(data))
-
-		var gistResponse GistDBResponse
-		if err := json.Unmarshal(data, &gistResponse); err != nil {
-			return nil, fmt.Errorf("error decoding GistDB response: %v", err)
-		}
-		if gistResponse.Status != 200 {
-			return nil, fmt.Errorf("GistDB error: %s", gistResponse.Error)
+		var gistData map[string]interface{}
+		if err := json.Unmarshal(data, &gistData); err != nil {
+			return nil, fmt.Errorf("error decoding gist: %v", err)
 		}
 
-		reposCollection, ok := gistResponse.Data["repos"]
+		files, ok := gistData["files"].(map[string]interface{})
 		if !ok {
-			return nil, fmt.Errorf("repos collection not found in response")
+			return []string{}, nil
 		}
 
-		reposJSON, err := json.Marshal(reposCollection)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling repos: %v", err)
+		reposFile, ok := files["repos.json"].(map[string]interface{})
+		if !ok {
+			fmt.Printf("repos.json not found, returning empty list\n")
+			return []string{}, nil
+		}
+
+		content, ok := reposFile["content"].(string)
+		if !ok || content == "" {
+			fmt.Printf("No content in repos.json, returning empty list\n")
+			return []string{}, nil
 		}
 
 		var repoObjects []RepoObject
-		if err := json.Unmarshal(reposJSON, &repoObjects); err != nil {
-			return nil, fmt.Errorf("error parsing repos: %v", err)
+		if err := json.Unmarshal([]byte(content), &repoObjects); err != nil {
+			return nil, fmt.Errorf("error parsing repos.json: %v", err)
 		}
 
 		var repos []string
@@ -104,13 +107,13 @@ func LoadReposFromGistDB(gistID, accessToken string) ([]string, error) {
 			}
 		}
 
-		fmt.Printf("Loaded %d repos from GistDB\n", len(repos))
+		fmt.Printf("Loaded %d repos from gist\n", len(repos))
 		return repos, nil
 
 	case err := <-errorChan:
-		return nil, fmt.Errorf("error fetching from GistDB: %v", err)
+		return nil, fmt.Errorf("error fetching from GitHub: %v", err)
 
 	case <-time.After(10 * time.Second):
-		return nil, fmt.Errorf("timeout fetching from GistDB")
+		return nil, fmt.Errorf("timeout fetching from GitHub")
 	}
 }

@@ -40,7 +40,7 @@ func main() {
 
 		repos, err := internal.LoadReposFromGistDB(gistID, accessToken)
 		if err != nil {
-			fmt.Printf("Failed to load repos from GistDB: %v\n", err)
+			fmt.Printf("Failed to load repos from gist: %v\n", err)
 			http.Error(w, fmt.Sprintf("Failed to load repos: %v", err), http.StatusInternalServerError)
 			return
 		}
