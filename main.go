@@ -9,6 +9,7 @@ import (
 
 	internal "github.com/MdSadiqMd/issue-tracker/internal"
 	"github.com/syumai/workers"
+	"github.com/syumai/workers/cloudflare"
 )
 
 func main() {
@@ -29,9 +30,18 @@ func main() {
 			return
 		}
 
-		repos, err := internal.LoadReposFromFile()
+		gistID := cloudflare.Getenv("GIST_ID")
+		accessToken := cloudflare.Getenv("GITHUB_ACCESS_TOKEN")
+		if gistID == "" || accessToken == "" {
+			http.Error(w, "Missing GIST_ID or GITHUB_ACCESS_TOKEN environment variables", http.StatusInternalServerError)
+			return
+		}
+		fmt.Printf("Using Gist ID: %s\n", gistID)
+
+		repos, err := internal.LoadReposFromGistDB(gistID, accessToken)
 		if err != nil {
-			http.Error(w, "Failed to load repos", http.StatusInternalServerError)
+			fmt.Printf("Failed to load repos from GistDB: %v\n", err)
+			http.Error(w, fmt.Sprintf("Failed to load repos: %v", err), http.StatusInternalServerError)
 			return
 		}
 
