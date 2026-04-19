@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"syscall/js"
 	"time"
+
+	"github.com/syumai/workers/cloudflare"
 )
 
 type Issue struct {
@@ -17,7 +19,7 @@ type RepoIssues struct {
 	Issues []Issue `json:"issues"`
 }
 
-func FetchIssues(repo string) ([]Issue, error) {
+func fetchIssues(repo string) ([]Issue, error) {
 	oneHourAgo := time.Now().Add(-1 * time.Hour)
 	sinceParam := oneHourAgo.Format(time.RFC3339)
 	url := fmt.Sprintf("https://api.github.com/repos/%s/issues?per_page=100&state=open&since=%s", repo, sinceParam)
@@ -94,4 +96,33 @@ func FetchIssues(repo string) ([]Issue, error) {
 		fmt.Printf("Timeout fetching issues for %s\n", repo)
 		return []Issue{}, nil
 	}
+}
+
+func FetchIssuesLogic() ([]RepoIssues, error) {
+	gistID := cloudflare.Getenv("GIST_ID")
+	accessToken := cloudflare.Getenv("GITHUB_ACCESS_TOKEN")
+	if gistID == "" || accessToken == "" {
+		return nil, fmt.Errorf("Missing GIST_ID or GITHUB_ACCESS_TOKEN environment variables")
+	}
+	fmt.Printf("Using Gist ID: %s\n", gistID)
+
+	repos, err := LoadReposFromGistDB(gistID, accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to load repos from gist: %v", err)
+	}
+
+	var results []RepoIssues
+	for _, repo := range repos {
+		issues, err := fetchIssues(repo)
+		if err != nil {
+			fmt.Printf("Failed to fetch issues for %s: %v\n", repo, err)
+			continue
+		}
+		results = append(results, RepoIssues{
+			Repo:   repo,
+			Issues: issues,
+		})
+	}
+
+	return results, nil
 }

@@ -8,11 +8,14 @@ import (
 	"net/http"
 
 	internal "github.com/MdSadiqMd/issue-tracker/internal"
+	"github.com/MdSadiqMd/issue-tracker/pkg"
 	"github.com/syumai/workers"
 	"github.com/syumai/workers/cloudflare"
+	"github.com/syumai/workers/cloudflare/cron"
 )
 
 func main() {
+	cron.ScheduleTaskNonBlock(pkg.CronTask)
 	http.HandleFunc("/hello", func(w http.ResponseWriter, req *http.Request) {
 		msg := "Hello!"
 		w.Write([]byte(msg))
@@ -30,32 +33,10 @@ func main() {
 			return
 		}
 
-		gistID := cloudflare.Getenv("GIST_ID")
-		accessToken := cloudflare.Getenv("GITHUB_ACCESS_TOKEN")
-		if gistID == "" || accessToken == "" {
-			http.Error(w, "Missing GIST_ID or GITHUB_ACCESS_TOKEN environment variables", http.StatusInternalServerError)
-			return
-		}
-		fmt.Printf("Using Gist ID: %s\n", gistID)
-
-		repos, err := internal.LoadReposFromGistDB(gistID, accessToken)
+		results, err := internal.FetchIssuesLogic()
 		if err != nil {
-			fmt.Printf("Failed to load repos from gist: %v\n", err)
-			http.Error(w, fmt.Sprintf("Failed to load repos: %v", err), http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-		}
-
-		var results []internal.RepoIssues
-		for _, repo := range repos {
-			issues, err := internal.FetchIssues(repo)
-			if err != nil {
-				fmt.Printf("Failed to fetch issues for %s: %v\n", repo, err)
-				continue
-			}
-			results = append(results, internal.RepoIssues{
-				Repo:   repo,
-				Issues: issues,
-			})
 		}
 
 		w.Header().Set("Content-Type", "application/json")
