@@ -10,7 +10,6 @@ import (
 	internal "github.com/MdSadiqMd/issue-tracker/internal"
 	"github.com/MdSadiqMd/issue-tracker/pkg"
 	"github.com/syumai/workers"
-	"github.com/syumai/workers/cloudflare"
 	"github.com/syumai/workers/cloudflare/cron"
 )
 
@@ -48,12 +47,13 @@ func main() {
 			return
 		}
 
-		apiURL := cloudflare.Getenv("GREEN_API_URL")
-		chatID := cloudflare.Getenv("CHAT_ID")
-		if apiURL == "" || chatID == "" {
-			http.Error(w, "Missing GREEN_API_URL or CHAT_ID environment variables", http.StatusInternalServerError)
+		cfg, err := internal.GetGreenAPIConfig()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		apiURL := cfg.APIURL
+		chatID := cfg.ChatID
 
 		results, err := internal.FetchIssuesLogic()
 		if err != nil {
@@ -86,7 +86,7 @@ func main() {
 			return
 		}
 
-		message := pkg.FormatIssuesMessage(results)
+		message := internal.FormatIssuesMessage(results)
 		if err := pkg.SendWhatsAppMessage(apiURL, chatID, message); err != nil {
 			fmt.Printf("Error sending WhatsApp message: %v\n", err)
 			http.Error(w, fmt.Sprintf("Failed to send WhatsApp message: %v", err), http.StatusInternalServerError)
@@ -110,12 +110,13 @@ func main() {
 			return
 		}
 
-		gistID := cloudflare.Getenv("GIST_ID")
-		accessToken := cloudflare.Getenv("GITHUB_ACCESS_TOKEN")
-		if gistID == "" || accessToken == "" {
-			http.Error(w, "Missing GIST_ID or GITHUB_ACCESS_TOKEN environment variables", http.StatusInternalServerError)
+		cfg, err := internal.GetGistConfig()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		gistID := cfg.GistID
+		accessToken := cfg.AccessToken
 
 		var addRepoReq internal.AddRepoRequest
 		if err := json.NewDecoder(req.Body).Decode(&addRepoReq); err != nil {
