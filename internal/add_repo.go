@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"syscall/js"
 	"time"
+
+	"github.com/MdSadiqMd/issue-tracker/pkg"
 )
 
 type AddRepoRequest struct {
@@ -37,70 +38,11 @@ func ExtractRepoName(repoURL string) (string, error) {
 }
 
 func AddRepoToGistDB(gistID, accessToken, repoName string) error {
-	gistURL := fmt.Sprintf("https://api.github.com/gists/%s", gistID)
-	fmt.Printf("Fetching current gist: %s\n", gistURL)
+	fmt.Printf("Fetching current gist to add repo: %s\n", repoName)
 
-	headers := js.Global().Get("Object").New()
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
-	headers.Set("Accept", "application/vnd.github.v3+json")
-	headers.Set("User-Agent", "Issue-Tracker-Worker")
-
-	options := js.Global().Get("Object").New()
-	options.Set("method", "GET")
-	options.Set("headers", headers)
-
-	fetchFunc := js.Global().Get("fetch")
-	promise := fetchFunc.Invoke(gistURL, options)
-
-	resultChan := make(chan []byte, 1)
-	errorChan := make(chan error, 1)
-
-	thenFunc := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		response := args[0]
-		status := response.Get("status").Int()
-		if status != 200 {
-			errorChan <- fmt.Errorf("GitHub API returned status %d", status)
-			return nil
-		}
-
-		jsonPromise := response.Call("json")
-		jsonPromise.Call("then", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-			jsonStr := js.Global().Get("JSON").Call("stringify", args[0]).String()
-			resultChan <- []byte(jsonStr)
-			return nil
-		}))
-
-		return nil
-	})
-
-	promise.Call("then", thenFunc)
-	promise.Call("catch", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		errorChan <- fmt.Errorf("fetch failed: %v", args[0].String())
-		return nil
-	}))
-
-	var currentRepos []RepoObject
-	select {
-	case data := <-resultChan:
-		var gistData map[string]interface{}
-		if err := json.Unmarshal(data, &gistData); err != nil {
-			return fmt.Errorf("error decoding gist: %v", err)
-		}
-
-		files, ok := gistData["files"].(map[string]interface{})
-		if ok {
-			if reposFile, ok := files["repos.json"].(map[string]interface{}); ok {
-				if content, ok := reposFile["content"].(string); ok && content != "" {
-					json.Unmarshal([]byte(content), &currentRepos)
-				}
-			}
-		}
-
-	case err := <-errorChan:
-		return fmt.Errorf("error fetching gist: %v", err)
-
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("timeout fetching gist")
+	currentRepos, err := FetchGistRepos(gistID, accessToken)
+	if err != nil {
+		return fmt.Errorf("error fetching current gist: %v", err)
 	}
 
 	for _, repo := range currentRepos {
@@ -131,55 +73,19 @@ func AddRepoToGistDB(gistID, accessToken, repoName string) error {
 		return fmt.Errorf("error marshaling update body: %v", err)
 	}
 
-	patchHeaders := js.Global().Get("Object").New()
-	patchHeaders.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
-	patchHeaders.Set("Content-Type", "application/json")
-	patchHeaders.Set("Accept", "application/vnd.github.v3+json")
-	patchHeaders.Set("User-Agent", "Issue-Tracker-Worker")
-
-	patchOptions := js.Global().Get("Object").New()
-	patchOptions.Set("method", "PATCH")
-	patchOptions.Set("headers", patchHeaders)
-	patchOptions.Set("body", string(updateBodyJSON))
-
-	patchPromise := fetchFunc.Invoke(gistURL, patchOptions)
-
-	resultChan = make(chan []byte, 1)
-	errorChan = make(chan error, 1)
-
-	patchThenFunc := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		response := args[0]
-		status := response.Get("status").Int()
-
-		if status != 200 {
-			textPromise := response.Call("text")
-			textPromise.Call("then", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-				errorText := args[0].String()
-				errorChan <- fmt.Errorf("GitHub API returned status %d: %s", status, errorText)
-				return nil
-			}))
-			return nil
-		}
-
-		resultChan <- []byte("success")
-		return nil
-	})
-
-	patchPromise.Call("then", patchThenFunc)
-	patchPromise.Call("catch", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		errorChan <- fmt.Errorf("patch failed: %v", args[0].String())
-		return nil
-	}))
-
-	select {
-	case <-resultChan:
-		fmt.Printf("Successfully added repo %s\n", repoName)
-		return nil
-
-	case err := <-errorChan:
-		return fmt.Errorf("error updating gist: %v", err)
-
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("timeout updating gist")
+	gistURL := fmt.Sprintf("https://api.github.com/gists/%s", gistID)
+	patchHeaders := map[string]string{
+		"Authorization": fmt.Sprintf("Bearer %s", accessToken),
+		"Content-Type":  "application/json",
+		"Accept":        "application/vnd.github.v3+json",
+		"User-Agent":    "Issue-Tracker-Worker",
 	}
+
+	_, err = pkg.FetchJS(gistURL, "PATCH", patchHeaders, string(updateBodyJSON))
+	if err != nil {
+		return fmt.Errorf("error updating gist: %v", err)
+	}
+
+	fmt.Printf("Successfully added repo %s\n", repoName)
+	return nil
 }
