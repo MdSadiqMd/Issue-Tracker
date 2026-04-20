@@ -42,6 +42,68 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(results)
 	})
+	http.HandleFunc("/send-report", func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodPost {
+			http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		apiURL := cloudflare.Getenv("GREEN_API_URL")
+		chatID := cloudflare.Getenv("CHAT_ID")
+		if apiURL == "" || chatID == "" {
+			http.Error(w, "Missing GREEN_API_URL or CHAT_ID environment variables", http.StatusInternalServerError)
+			return
+		}
+
+		results, err := internal.FetchIssuesLogic()
+		if err != nil {
+			fmt.Printf("Error fetching issues: %v\n", err)
+			errorMsg := fmt.Sprintf("❌ *Error fetching GitHub issues*\n\n%v", err)
+			if sendErr := pkg.SendWhatsAppMessage(apiURL, chatID, errorMsg); sendErr != nil {
+				http.Error(w, fmt.Sprintf("Failed to send error notification: %v", sendErr), http.StatusInternalServerError)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to fetch issues: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		totalIssues := 0
+		for _, r := range results {
+			totalIssues += len(r.Issues)
+		}
+
+		if totalIssues == 0 {
+			fmt.Println("No issues found, skipping WhatsApp notification")
+			response := map[string]interface{}{
+				"success":      true,
+				"message":      "No issues found, notification skipped",
+				"issues_count": 0,
+				"repos_count":  len(results),
+				"skipped":      true,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		message := pkg.FormatIssuesMessage(results)
+		if err := pkg.SendWhatsAppMessage(apiURL, chatID, message); err != nil {
+			fmt.Printf("Error sending WhatsApp message: %v\n", err)
+			http.Error(w, fmt.Sprintf("Failed to send WhatsApp message: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		response := map[string]interface{}{
+			"success":      true,
+			"message":      "WhatsApp report sent successfully",
+			"issues_count": totalIssues,
+			"repos_count":  len(results),
+			"skipped":      false,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	})
 	http.HandleFunc("/add-repo", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodPost {
 			http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
