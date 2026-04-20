@@ -20,9 +20,10 @@ type RepoIssues struct {
 }
 
 func fetchIssues(repo string) ([]Issue, error) {
-	oneHourAgo := time.Now().Add(-1 * time.Hour)
-	sinceParam := oneHourAgo.Format(time.RFC3339)
-	url := fmt.Sprintf("https://api.github.com/repos/%s/issues?per_page=100&state=open&since=%s", repo, sinceParam)
+	oneHourAgo := time.Now().UTC().Add(-1 * time.Hour)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues?per_page=10&state=all&sort=created&direction=desc", repo)
+
+	fmt.Printf("Fetching recent issues for %s (filtering for created after: %s UTC)\n", repo, oneHourAgo.Format(time.RFC3339))
 
 	headers := js.Global().Get("Object").New()
 	headers.Set("Accept", "application/vnd.github.v3+json")
@@ -68,24 +69,24 @@ func fetchIssues(repo string) ([]Issue, error) {
 
 	select {
 	case data := <-resultChan:
-		fmt.Printf("Received data for %s: %s\n", repo, string(data))
-
 		var issues []Issue
 		if err := json.Unmarshal(data, &issues); err != nil {
-			fmt.Printf("Error decoding JSON for %s: %v\nData: %s\n", repo, err, string(data))
+			fmt.Printf("Error decoding JSON for %s: %v\n", repo, err)
 			return []Issue{}, nil
 		}
 
-		fmt.Printf("Successfully decoded %d issues for %s\n", len(issues), repo)
+		fmt.Printf("Received %d total issues for %s\n", len(issues), repo)
 
 		var recentIssues []Issue
 		for _, issue := range issues {
-			if issue.CreatedAt.After(oneHourAgo) {
+			issueCreatedUTC := issue.CreatedAt.UTC()
+			if issueCreatedUTC.After(oneHourAgo) {
 				recentIssues = append(recentIssues, issue)
+				fmt.Printf("  ✓ Issue: '%s', Created: %s UTC (within last hour)\n", issue.Title, issueCreatedUTC.Format("2006-01-02 15:04:05"))
 			}
 		}
 
-		fmt.Printf("Found %d recent issues (last hour) for %s\n", len(recentIssues), repo)
+		fmt.Printf("✅ Found %d issues created in last hour for %s\n", len(recentIssues), repo)
 		return recentIssues, nil
 
 	case err := <-errorChan:
@@ -104,23 +105,38 @@ func FetchIssuesLogic() ([]RepoIssues, error) {
 	if gistID == "" || accessToken == "" {
 		return nil, fmt.Errorf("Missing GIST_ID or GITHUB_ACCESS_TOKEN environment variables")
 	}
-	fmt.Printf("Using Gist ID: %s\n", gistID)
 
 	repos, err := LoadReposFromGistDB(gistID, accessToken)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to load repos from gist: %v", err)
 	}
 
-	var results []RepoIssues
+	fmt.Printf("Fetching issues from %d repositories concurrently\n", len(repos))
+
+	type repoResult struct {
+		repo   string
+		issues []Issue
+		err    error
+	}
+
+	resultChan := make(chan repoResult, len(repos))
 	for _, repo := range repos {
-		issues, err := fetchIssues(repo)
-		if err != nil {
-			fmt.Printf("Failed to fetch issues for %s: %v\n", repo, err)
+		go func(r string) {
+			issues, err := fetchIssues(r)
+			resultChan <- repoResult{repo: r, issues: issues, err: err}
+		}(repo)
+	}
+
+	var results []RepoIssues
+	for i := 0; i < len(repos); i++ {
+		result := <-resultChan
+		if result.err != nil {
+			fmt.Printf("Failed to fetch issues for %s: %v\n", result.repo, result.err)
 			continue
 		}
 		results = append(results, RepoIssues{
-			Repo:   repo,
-			Issues: issues,
+			Repo:   result.repo,
+			Issues: result.issues,
 		})
 	}
 
