@@ -3,6 +3,7 @@ package pkg
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type WhatsAppMessage struct {
@@ -11,6 +12,9 @@ type WhatsAppMessage struct {
 }
 
 func SendWhatsAppMessage(apiURL, chatID, message string) error {
+	if !strings.Contains(chatID, "@") {
+		chatID = chatID + "@c.us"
+	}
 	fmt.Printf("Sending WhatsApp message to %s\n", chatID)
 	msgBody := WhatsAppMessage{
 		ChatID:  chatID,
@@ -29,6 +33,13 @@ func SendWhatsAppMessage(apiURL, chatID, message string) error {
 	data, err := FetchJS(apiURL, "POST", headers, string(bodyJSON))
 	if err != nil {
 		return fmt.Errorf("error sending WhatsApp message: %v", err)
+	}
+
+	var respData map[string]interface{}
+	if err := json.Unmarshal(data, &respData); err == nil {
+		if _, ok := respData["idMessage"]; !ok {
+			return fmt.Errorf("Green API failed to send message: %s", string(data))
+		}
 	}
 
 	fmt.Printf("WhatsApp message sent successfully: %s\n", string(data))
