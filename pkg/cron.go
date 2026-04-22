@@ -16,7 +16,19 @@ func CronTask(ctx context.Context) error {
 	fmt.Printf("Cron task started at %v\n", e.ScheduledTime)
 
 	cloudflare.WaitUntil(func() {
-		url := "http://localhost:8787/send-report"
+		workerEnv := cloudflare.Getenv("WORKER_ENV")
+		var url string
+
+		if workerEnv == "production" {
+			prodURL := cloudflare.Getenv("WORKER_URL")
+			if prodURL == "" {
+				fmt.Println("Error: WORKER_URL not set in production")
+				return
+			}
+			url = fmt.Sprintf("%s/send-report", prodURL)
+		} else {
+			url = "http://localhost:8787/send-report"
+		}
 
 		headers := map[string]string{
 			"Content-Type": "application/json",
