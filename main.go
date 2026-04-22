@@ -52,14 +52,12 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		apiURL := cfg.APIURL
-		chatID := cfg.ChatID
 
 		results, err := internal.FetchIssuesLogic()
 		if err != nil {
 			fmt.Printf("Error fetching issues: %v\n", err)
-			errorMsg := fmt.Sprintf("❌ *Error fetching GitHub issues*\n\n%v", err)
-			if sendErr := pkg.SendWhatsAppMessage(apiURL, chatID, errorMsg); sendErr != nil {
+			errorMsg := fmt.Sprintf("Error fetching GitHub issues\n\n%v", err)
+			if sendErr := pkg.SendWhatsAppMessage(cfg.APIURL, cfg.IdInstance, cfg.ApiTokenInstance, cfg.ChatID, errorMsg); sendErr != nil {
 				http.Error(w, fmt.Sprintf("Failed to send error notification: %v", sendErr), http.StatusInternalServerError)
 				return
 			}
@@ -87,7 +85,7 @@ func main() {
 		}
 
 		message := internal.FormatIssuesMessage(results)
-		if err := pkg.SendWhatsAppMessage(apiURL, chatID, message); err != nil {
+		if err := pkg.SendWhatsAppMessage(cfg.APIURL, cfg.IdInstance, cfg.ApiTokenInstance, cfg.ChatID, message); err != nil {
 			fmt.Printf("Error sending WhatsApp message: %v\n", err)
 			http.Error(w, fmt.Sprintf("Failed to send WhatsApp message: %v", err), http.StatusInternalServerError)
 			return

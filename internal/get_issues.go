@@ -9,8 +9,10 @@ import (
 )
 
 type Issue struct {
-	Title     string    `json:"title"`
-	CreatedAt time.Time `json:"created_at"`
+	Title       string    `json:"title"`
+	CreatedAt   time.Time `json:"created_at"`
+	HTMLURL     string    `json:"html_url"`
+	PullRequest interface{} `json:"pull_request"`
 }
 
 type RepoIssues struct {
@@ -18,15 +20,16 @@ type RepoIssues struct {
 	Issues []Issue `json:"issues"`
 }
 
-func fetchIssues(repo string) ([]Issue, error) {
+func fetchIssues(repo, githubToken string) ([]Issue, error) {
 	oneHourAgo := time.Now().UTC().Add(-1 * time.Hour)
-	url := fmt.Sprintf("https://api.github.com/repos/%s/issues?per_page=10&state=all&sort=created&direction=desc", repo)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues?per_page=100&state=open&sort=created&direction=desc", repo)
 
-	fmt.Printf("Fetching recent issues for %s (filtering for created after: %s UTC)\n", repo, oneHourAgo.Format(time.RFC3339))
+	fmt.Printf("Fetching issues for %s (filtering for created after: %s UTC)\n", repo, oneHourAgo.Format(time.RFC3339))
 
 	headers := map[string]string{
-		"Accept":     "application/vnd.github.v3+json",
-		"User-Agent": "Go-GitHub-Issues-Fetcher",
+		"Accept":        "application/vnd.github.v3+json",
+		"User-Agent":    "Go-GitHub-Issues-Fetcher",
+		"Authorization": fmt.Sprintf("token %s", githubToken),
 	}
 
 	data, err := pkg.FetchJS(url, "GET", headers, "")
@@ -41,19 +44,22 @@ func fetchIssues(repo string) ([]Issue, error) {
 		return []Issue{}, nil
 	}
 
-	fmt.Printf("Received %d total issues for %s\n", len(issues), repo)
+	fmt.Printf("Received %d total items for %s\n", len(issues), repo)
 
-	var recentIssues []Issue
+	var onlyIssues []Issue
 	for _, issue := range issues {
-		issueCreatedUTC := issue.CreatedAt.UTC()
-		if issueCreatedUTC.After(oneHourAgo) {
-			recentIssues = append(recentIssues, issue)
-			fmt.Printf("  ✓ Issue: '%s', Created: %s UTC (within last hour)\n", issue.Title, issueCreatedUTC.Format("2006-01-02 15:04:05"))
+		if issue.PullRequest != nil {
+			continue
+		}
+
+		if issue.CreatedAt.UTC().After(oneHourAgo) {
+			onlyIssues = append(onlyIssues, issue)
+			fmt.Printf("  ✓ Issue: '%s', Created: %s UTC\n", issue.Title, issue.CreatedAt.UTC().Format("2006-01-02 15:04:05"))
 		}
 	}
 
-	fmt.Printf("✅ Found %d issues created in last hour for %s\n", len(recentIssues), repo)
-	return recentIssues, nil
+	fmt.Printf("✅ Found %d issues created in last hour for %s\n", len(onlyIssues), repo)
+	return onlyIssues, nil
 }
 
 func FetchIssuesLogic() ([]RepoIssues, error) {
@@ -78,7 +84,7 @@ func FetchIssuesLogic() ([]RepoIssues, error) {
 	resultChan := make(chan repoResult, len(repos))
 	for _, repo := range repos {
 		go func(r string) {
-			issues, err := fetchIssues(r)
+			issues, err := fetchIssues(r, cfg.AccessToken)
 			resultChan <- repoResult{repo: r, issues: issues, err: err}
 		}(repo)
 	}

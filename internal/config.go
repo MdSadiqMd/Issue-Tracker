@@ -24,18 +24,25 @@ func GetGistConfig() (*GistConfig, error) {
 }
 
 type GreenAPIConfig struct {
-	APIURL string
-	ChatID string
+	APIURL           string
+	ChatID           string
+	IdInstance       string
+	ApiTokenInstance string
 }
 
 func GetGreenAPIConfig() (*GreenAPIConfig, error) {
 	apiURL := cloudflare.Getenv("GREEN_API_URL")
 	chatID := cloudflare.Getenv("CHAT_ID")
-	if apiURL == "" || chatID == "" {
-		return nil, fmt.Errorf("Missing GREEN_API_URL or CHAT_ID environment variables")
+	idInstance := cloudflare.Getenv("GREEN_API_ID_INSTANCE")
+	apiTokenInstance := cloudflare.Getenv("GREEN_API_TOKEN_INSTANCE")
+	if apiURL == "" || chatID == "" || idInstance == "" || apiTokenInstance == "" {
+		return nil, fmt.Errorf("Missing GREEN_API_URL, CHAT_ID, GREEN_API_ID_INSTANCE or GREEN_API_TOKEN_INSTANCE environment variables")
 	}
+
 	return &GreenAPIConfig{
-		APIURL: apiURL,
-		ChatID: chatID,
+		APIURL:           apiURL,
+		ChatID:           chatID,
+		IdInstance:       idInstance,
+		ApiTokenInstance: apiTokenInstance,
 	}, nil
 }

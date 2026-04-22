@@ -11,7 +11,7 @@ type WhatsAppMessage struct {
 	Message string `json:"message"`
 }
 
-func SendWhatsAppMessage(apiURL, chatID, message string) error {
+func SendWhatsAppMessage(apiBaseURL, idInstance, apiTokenInstance, chatID, message string) error {
 	if !strings.Contains(chatID, "@") {
 		chatID = chatID + "@c.us"
 	}
@@ -26,11 +26,12 @@ func SendWhatsAppMessage(apiURL, chatID, message string) error {
 		return fmt.Errorf("error marshaling message: %v", err)
 	}
 
+	sendMessageURL := fmt.Sprintf("%s/waInstance%s/sendMessage/%s", apiBaseURL, idInstance, apiTokenInstance)
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}
 
-	data, err := FetchJS(apiURL, "POST", headers, string(bodyJSON))
+	data, err := FetchJS(sendMessageURL, "POST", headers, string(bodyJSON))
 	if err != nil {
 		return fmt.Errorf("error sending WhatsApp message: %v", err)
 	}
