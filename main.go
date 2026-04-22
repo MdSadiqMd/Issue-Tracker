@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 
 	internal "github.com/MdSadiqMd/issue-tracker/internal"
@@ -15,16 +13,9 @@ import (
 
 func main() {
 	cron.ScheduleTaskNonBlock(pkg.CronTask)
-	http.HandleFunc("/hello", func(w http.ResponseWriter, req *http.Request) {
-		msg := "Hello!"
-		w.Write([]byte(msg))
-	})
-	http.HandleFunc("/echo", func(w http.ResponseWriter, req *http.Request) {
-		b, err := io.ReadAll(req.Body)
-		if err != nil {
-			panic(err)
-		}
-		io.Copy(w, bytes.NewReader(b))
+	http.HandleFunc("/{$}", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Thalaivar</title><style>html,body{height:100%;margin:0;background:#000;display:grid;place-items:center}img{max-width:100%;max-height:100%;object-fit:contain}</style></head><body><img src="/Thalaivar%20GIF%20by%20RajiniGifs.gif" alt="Thalaivar GIF"></body></html>`))
 	})
 	http.HandleFunc("/fetch-issues", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodGet {
