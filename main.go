@@ -7,12 +7,13 @@ import (
 
 	internal "github.com/MdSadiqMd/issue-tracker/internal"
 	"github.com/MdSadiqMd/issue-tracker/pkg"
+	"github.com/MdSadiqMd/issue-tracker/tasks"
 	"github.com/syumai/workers"
 	"github.com/syumai/workers/cloudflare/cron"
 )
 
 func main() {
-	cron.ScheduleTaskNonBlock(pkg.CronTask)
+	cron.ScheduleTaskNonBlock(tasks.CronTask)
 	http.HandleFunc("/{$}", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Thalaivar</title><style>html,body{height:100%;margin:0;background:#000;display:grid;place-items:center}img{max-width:100%;max-height:100%;object-fit:contain}</style></head><body><img src="/Thalaivar%20GIF%20by%20RajiniGifs.gif" alt="Thalaivar GIF"></body></html>`))
